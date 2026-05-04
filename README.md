@@ -7,7 +7,7 @@ Generates lexicographically sortable string keys for ordering items. String comp
 ## Install
 
 ```sh
-go get github.com/thanhvu/lexorank
+go get github.com/misa198/lexorank-go
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ go get github.com/thanhvu/lexorank
 ### Package-level functions
 
 ```go
-import "github.com/thanhvu/lexorank"
+import "github.com/misa198/lexorank-go"
 
 // min rank: "0|000000:"
 minRank := lexorank.Min()
