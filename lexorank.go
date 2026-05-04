@@ -1,6 +1,8 @@
 package lexorank
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -16,69 +18,69 @@ var (
 	initialMaxDec Decimal
 )
 
+func mustParseDecimal(s string, sys NumeralSystem) Decimal {
+	d, err := ParseDecimal(s, sys)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
 func init() {
 	sys36 = System36
-	zeroDecimal = ParseDecimal("0", sys36)
-	oneDecimal = ParseDecimal("1", sys36)
-	eightDecimal = ParseDecimal("8", sys36)
+	zeroDecimal = mustParseDecimal("0", sys36)
+	oneDecimal = mustParseDecimal("1", sys36)
+	eightDecimal = mustParseDecimal("8", sys36)
 	minDecimal = zeroDecimal
-	maxDecimal = ParseDecimal("1000000", sys36).Sub(oneDecimal)
-	initialMinDec = ParseDecimal("100000", sys36)
-	initialMaxDec = ParseDecimal(string(rune(sys36.ToChar(sys36.Base()-2)))+"00000", sys36)
+	maxDecimal = mustParseDecimal("1000000", sys36).Sub(oneDecimal)
+	initialMinDec = mustParseDecimal("100000", sys36)
+	initialMaxDec = mustParseDecimal(string(rune(sys36.ToChar(sys36.Base()-2)))+"00000", sys36)
 }
 
 // --- Bucket ---
 
 // Bucket represents one of the 3 rank buckets (0, 1, 2).
-type Bucket struct {
-	id int
-}
+type Bucket int
 
-var (
-	Bucket0 = Bucket{id: 0}
-	Bucket1 = Bucket{id: 1}
-	Bucket2 = Bucket{id: 2}
+const (
+	Bucket0 Bucket = 0
+	Bucket1 Bucket = 1
+	Bucket2 Bucket = 2
 )
 
 // MaxBucket returns Bucket2.
 func MaxBucket() Bucket { return Bucket2 }
 
 // BucketFrom parses a bucket from a string ("0", "1", or "2").
-func BucketFrom(s string) Bucket {
-	switch s {
-	case "0":
-		return Bucket0
-	case "1":
-		return Bucket1
-	case "2":
-		return Bucket2
-	default:
-		panic("unknown bucket: " + s)
+func BucketFrom(s string) (Bucket, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid bucket %q: %w", s, err)
 	}
+	b := Bucket(n)
+	if b < Bucket0 || b > Bucket2 {
+		return 0, fmt.Errorf("bucket %d out of range [0,2]", n)
+	}
+	return b, nil
 }
 
 // ResolveBucket resolves a bucket by numeric ID.
-func ResolveBucket(bucketID int) Bucket {
-	switch bucketID {
-	case 0:
-		return Bucket0
-	case 1:
-		return Bucket1
-	case 2:
-		return Bucket2
-	default:
-		panic("no bucket found with id")
+func ResolveBucket(bucketID int) (Bucket, error) {
+	b := Bucket(bucketID)
+	if b < Bucket0 || b > Bucket2 {
+		return 0, fmt.Errorf("bucket %d out of range [0,2]", bucketID)
 	}
+	return b, nil
 }
 
-func (b Bucket) Format() string { return string(rune(sys36.ToChar(b.id))) }
+func (b Bucket) Format() string { return string(rune(sys36.ToChar(int(b)))) }
 func (b Bucket) String() string { return b.Format() }
 
 func (b Bucket) Next() Bucket {
-	switch b.id {
-	case 0:
+	switch b {
+	case Bucket0:
 		return Bucket1
-	case 1:
+	case Bucket1:
 		return Bucket2
 	default:
 		return Bucket0
@@ -86,25 +88,20 @@ func (b Bucket) Next() Bucket {
 }
 
 func (b Bucket) Prev() Bucket {
-	switch b.id {
-	case 0:
+	switch b {
+	case Bucket0:
 		return Bucket2
-	case 1:
+	case Bucket1:
 		return Bucket0
 	default:
 		return Bucket1
 	}
 }
 
-func (b Bucket) Equals(other Bucket) bool {
-	return b.id == other.id
-}
-
 // --- Rank ---
 
 // Rank is a lexicographically sortable rank string.
 type Rank struct {
-	value   string
 	bucket  Bucket
 	decimal Decimal
 }
@@ -117,7 +114,8 @@ func Min() Rank {
 // Middle returns the midpoint between min and max.
 func Middle() Rank {
 	minRank := Min()
-	return minRank.Between(Max())
+	mid, _ := minRank.Between(Max())
+	return mid
 }
 
 // Max returns the maximum rank for the given bucket (default Bucket0).
@@ -131,44 +129,54 @@ func Max(bucket ...Bucket) Rank {
 
 // Initial returns the initial rank for a bucket.
 func Initial(bucket Bucket) Rank {
-	if bucket.Equals(Bucket0) {
+	if bucket == Bucket0 {
 		return RankFrom(bucket, initialMinDec)
 	}
 	return RankFrom(bucket, initialMaxDec)
 }
 
 // ParseRank parses a rank string like "0|000000:".
-func ParseRank(s string) Rank {
+func ParseRank(s string) (Rank, error) {
 	parts := strings.SplitN(s, "|", 2)
-	bucket := BucketFrom(parts[0])
-	decimal := ParseDecimal(parts[1], sys36)
-	return RankFrom(bucket, decimal)
+	if len(parts) != 2 {
+		return Rank{}, fmt.Errorf("invalid rank format %q: expected 'bucket|decimal'", s)
+	}
+	bucket, err := BucketFrom(parts[0])
+	if err != nil {
+		return Rank{}, err
+	}
+	decimal, err := ParseDecimal(parts[1], sys36)
+	if err != nil {
+		return Rank{}, fmt.Errorf("invalid decimal in rank %q: %w", s, err)
+	}
+	return RankFrom(bucket, decimal), nil
 }
 
 // RankFrom creates a Rank from a bucket and decimal.
 func RankFrom(bucket Bucket, decimal Decimal) Rank {
 	return Rank{
-		value:   bucket.Format() + "|" + formatDecimal(decimal),
 		bucket:  bucket,
 		decimal: decimal,
 	}
 }
 
-func (r Rank) String() string      { return r.value }
-func (r Rank) Format() string      { return r.value }
+func (r Rank) String() string      { return r.Format() }
+func (r Rank) Format() string      { return r.bucket.Format() + "|" + formatDecimal(r.decimal) }
 func (r Rank) GetBucket() Bucket   { return r.bucket }
 func (r Rank) GetDecimal() Decimal { return r.decimal }
 
 func (r Rank) IsMin() bool { return r.decimal.Equals(minDecimal) }
 func (r Rank) IsMax() bool { return r.decimal.Equals(maxDecimal) }
 
-func (r Rank) Equals(other Rank) bool { return r.value == other.value }
+func (r Rank) Equals(other Rank) bool { return r.Format() == other.Format() }
 
 func (r Rank) CompareTo(other Rank) int {
-	if r.value == other.value {
+	a := r.Format()
+	b := other.Format()
+	if a == b {
 		return 0
 	}
-	if r.value < other.value {
+	if a < b {
 		return -1
 	}
 	return 1
@@ -200,18 +208,20 @@ func (r Rank) GenNext() Rank {
 	return RankFrom(r.bucket, nextDec)
 }
 
-func (r Rank) Between(other Rank) Rank {
-	if !r.bucket.Equals(other.bucket) {
-		panic("between works only within the same bucket")
+// Between returns the midpoint rank between r and other.
+// Returns an error if the ranks are in different buckets or have the same decimal.
+func (r Rank) Between(other Rank) (Rank, error) {
+	if r.bucket != other.bucket {
+		return Rank{}, fmt.Errorf("between works only within the same bucket")
 	}
 	cmp := r.decimal.CompareTo(other.decimal)
 	if cmp > 0 {
-		return RankFrom(r.bucket, betweenDecimals(other.decimal, r.decimal))
+		return RankFrom(r.bucket, betweenDecimals(other.decimal, r.decimal)), nil
 	}
 	if cmp == 0 {
-		panic("try to rank between issues with same rank")
+		return Rank{}, fmt.Errorf("cannot rank between issues with same rank")
 	}
-	return RankFrom(r.bucket, betweenDecimals(r.decimal, other.decimal))
+	return RankFrom(r.bucket, betweenDecimals(r.decimal, other.decimal)), nil
 }
 
 func (r Rank) InNextBucket() Rank {
@@ -310,6 +320,8 @@ func middleInternal(lbound, rbound, left, right Decimal) Decimal {
 	return checkMid(lbound, rbound, mid)
 }
 
+const rankDecimalDigits = 6
+
 func formatDecimal(decimal Decimal) string {
 	formatVal := decimal.Format()
 	radixChar := decimal.System().RadixPointChar()
@@ -321,14 +333,11 @@ func formatDecimal(decimal Decimal) string {
 		formatVal = formatVal + string(radixChar)
 	}
 
-	for partialIdx < 6 {
-		formatVal = string(zeroChar) + formatVal
-		partialIdx++
+	if partialIdx < rankDecimalDigits {
+		formatVal = strings.Repeat(string(rune(zeroChar)), rankDecimalDigits-partialIdx) + formatVal
 	}
 
-	for len(formatVal) > 0 && formatVal[len(formatVal)-1] == zeroChar {
-		formatVal = formatVal[:len(formatVal)-1]
-	}
+	formatVal = strings.TrimRight(formatVal, string(rune(zeroChar)))
 
 	return formatVal
 }

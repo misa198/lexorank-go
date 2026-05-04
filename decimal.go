@@ -1,6 +1,7 @@
 package lexorank
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -27,13 +28,13 @@ func NewInteger(sys NumeralSystem, sign int, mag []int) Integer {
 }
 
 // ParseInteger parses a string into an Integer.
-func ParseInteger(s string, sys NumeralSystem) Integer {
+func ParseInteger(s string, sys NumeralSystem) (Integer, error) {
 	sign := 1
 	str := s
 	if len(str) > 0 {
 		if str[0] == sys.PositiveChar() {
 			str = str[1:]
-		} else if str[0] == sysNegativeChar(sys) {
+		} else if str[0] == sys.NegativeChar() {
 			str = str[1:]
 			sign = -1
 		}
@@ -43,16 +44,12 @@ func ParseInteger(s string, sys NumeralSystem) Integer {
 	for magIdx := 0; strIdx >= 0; magIdx++ {
 		d, err := sys.ToDigit(str[strIdx])
 		if err != nil {
-			panic(err)
+			return Integer{}, fmt.Errorf("invalid digit at position %d: %w", strIdx, err)
 		}
 		mag[magIdx] = d
 		strIdx--
 	}
-	return NewInteger(sys, sign, mag)
-}
-
-func sysNegativeChar(sys NumeralSystem) byte {
-	return sys.NegativeChar()
+	return NewInteger(sys, sign, mag), nil
 }
 
 // Zero returns the zero Integer for the given system.
@@ -167,13 +164,7 @@ func (i Integer) Negate() Integer {
 	if i.IsZero() {
 		return i
 	}
-	newSign := -1
-	if i.sign == 1 {
-		newSign = -1
-	} else {
-		newSign = 1
-	}
-	return NewInteger(i.sys, newSign, i.mag)
+	return NewInteger(i.sys, -i.sign, i.mag)
 }
 
 func (i Integer) ShiftLeft(times int) Integer {
@@ -321,6 +312,13 @@ func mulMag(sys NumeralSystem, l, r []int) []int {
 			}
 		}
 	}
+	// Final carry propagation sweep
+	for i := 0; i < len(result)-1; i++ {
+		for result[i] >= base {
+			result[i] -= base
+			result[i+1]++
+		}
+	}
 	return result
 }
 
@@ -372,18 +370,26 @@ func Half(sys NumeralSystem) Decimal {
 }
 
 // ParseDecimal parses a string with an optional radix point into a Decimal.
-func ParseDecimal(s string, sys NumeralSystem) Decimal {
+func ParseDecimal(s string, sys NumeralSystem) (Decimal, error) {
 	radix := sys.RadixPointChar()
 	partialIdx := strings.IndexByte(s, radix)
 	if strings.LastIndexByte(s, radix) != partialIdx {
-		panic("more than one " + string(radix))
+		return Decimal{}, fmt.Errorf("more than one radix point %q in %q", radix, s)
 	}
 	if partialIdx < 0 {
-		return MakeDecimal(ParseInteger(s, sys), 0)
+		integer, err := ParseInteger(s, sys)
+		if err != nil {
+			return Decimal{}, err
+		}
+		return MakeDecimal(integer, 0), nil
 	}
 	intStr := s[:partialIdx] + s[partialIdx+1:]
 	sig := len(s) - 1 - partialIdx
-	return MakeDecimal(ParseInteger(intStr, sys), sig)
+	integer, err := ParseInteger(intStr, sys)
+	if err != nil {
+		return Decimal{}, err
+	}
+	return MakeDecimal(integer, sig), nil
 }
 
 // DecimalFrom wraps an Integer with scale 0.
@@ -450,7 +456,7 @@ func (d Decimal) Floor() Integer {
 
 func (d Decimal) Ceil() Integer {
 	if d.IsExact() {
-		return d.mag
+		return d.Floor()
 	}
 	f := d.Floor()
 	return f.Add(One(f.System()))
