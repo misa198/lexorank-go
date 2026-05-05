@@ -1,5 +1,9 @@
 # LexoRank in Go
 
+[<img src="https://github.com/misa198/lexorank-go/actions/workflows/ci.yml/badge.svg">](https://github.com/misa198/lexorank-go/actions)
+[<img src="https://pkg.go.dev/badge/misa198/lexorank-go">](https://pkg.go.dev/github.com/misa198/lexorank-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/misa198/lexorank-go)](https://goreportcard.com/report/github.com/misa198/lexorank-go)
+
 A Go implementation of a list ordering system based on [JIRA's LexoRank algorithm](https://www.youtube.com/watch?v=OjQv9xMoFbg).
 
 Generates lexicographically sortable string keys for ordering items. String comparison produces correct ordering — no numeric parsing needed.
